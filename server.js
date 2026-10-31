@@ -44,8 +44,9 @@ let db = loadDB();
 app.use(cors());
 app.use(express.json({ limit: '100kb' }));
 
-// Serve frontend
+// Serve frontend (public/ first, then project root for index.html)
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 // Health
 app.get('/api/health', (req, res) => {
@@ -130,7 +131,9 @@ app.delete('/api/games', (req, res) => {
 
 // SPA fallback
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const pub = path.join(__dirname, 'public', 'index.html');
+  const root = path.join(__dirname, 'index.html');
+  res.sendFile(fs.existsSync(pub) && fs.statSync(pub).size > 100 ? pub : root);
 });
 
 app.listen(PORT, () => {
