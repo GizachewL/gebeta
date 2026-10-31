@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Play Gebeta (ገበጣ) – authentic Ethiopian strategy game. History, rules, AI, and personal game history. Software by Gizachew Hatau.">
+    <meta name="author" content="Gizachew Hatau">
+    <title>Gebeta (ገበጣ) – Traditional Ethiopian Strategy Game | Gizachew Hatau</title>
+    <style>
+        :root {
+            --board-color: #5c3a21;
+            --pit-color: #3d2514;
+            --player-a-color: #27ae60;
+            --player-b-color: #c0392b;
+            --seed-color: #ecf0f1;
+            --seed-highlight: #f1c40f;
+            --text: #2c1810;
+            --accent: #8b5a2b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(160deg, #f8f1e3 0%, #e8d9c0 100%);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+            line-height: 1.5;
+        }
+        header { text-align: center; margin-bottom: 12px; max-width: 900px; }
+        h1 { font-size: clamp(1.6rem, 5vw, 2.4rem); color: var(--board-color); }
+        .subtitle { font-size: 0.95rem; color: #6b4c35; margin-top: 4px; }
+        .credit { font-size: 0.85rem; margin-top: 6px; color: #8b5a2b; font-weight: 600; }
+        .status-panel {
+            font-size: 1.15rem; font-weight: 700; margin: 12px 0 18px; padding: 10px 24px;
+            border-radius: 30px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            min-width: 220px; text-align: center; transition: all 0.3s;
+        }
+        .status-turn-a { color: var(--player-a-color); border: 2px solid var(--player-a-color); }
+        .status-turn-b { color: var(--player-b-color); border: 2px solid var(--player-b-color); }
+        .status-win { color: #1a5276; border: 2px solid #1a5276; background: #eaf2f8; }
+        .gebeta-board {
+            background: var(--board-color); padding: 22px 18px; border-radius: 36px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.35), inset 0 3px 12px rgba(255,255,255,0.12);
+            display: flex; align-items: center; gap: 14px; user-select: none; max-width: 100%; overflow-x: auto;
+        }
+        .store {
+            width: 72px; height: 200px; background: var(--pit-color); border-radius: 36px;
+            box-shadow: inset 0 8px 14px rgba(0,0,0,0.55); display: flex; flex-direction: column;
+            flex-wrap: wrap; align-content: center; justify-content: center; gap: 3px; padding: 8px 6px; position: relative;
+        }
+        .store-label {
+            position: absolute; color: rgba(255,255,255,0.55); font-size: 0.75rem; font-weight: 700;
+            bottom: -22px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+        }
+        .pits-grid {
+            display: grid; grid-template-rows: repeat(2, 88px); grid-template-columns: repeat(6, 88px); gap: 12px;
+        }
+        .pit {
+            background: var(--pit-color); border-radius: 50%;
+            box-shadow: inset 0 6px 10px rgba(0,0,0,0.55), 0 2px 3px rgba(255,255,255,0.08);
+            cursor: pointer; display: flex; flex-wrap: wrap; align-content: center; justify-content: center;
+            gap: 3px; padding: 10px; transition: transform 0.18s, box-shadow 0.18s; position: relative;
+        }
+        .pit.playable-a:hover { transform: scale(1.07); box-shadow: inset 0 6px 10px rgba(0,0,0,0.55), 0 0 16px var(--player-a-color); }
+        .pit.playable-b:hover { transform: scale(1.07); box-shadow: inset 0 6px 10px rgba(0,0,0,0.55), 0 0 16px var(--player-b-color); }
+        .pit.disabled { cursor: not-allowed; opacity: 0.92; }
+        .pit.highlight { box-shadow: inset 0 6px 10px rgba(0,0,0,0.55), 0 0 18px var(--seed-highlight); }
+        .pit-count {
+            position: absolute; color: rgba(255,255,255,0.75); font-size: 0.85rem; font-weight: 700;
+            pointer-events: none; top: 6px; right: 8px;
+        }
+        .seed {
+            width: 13px; height: 13px; background: radial-gradient(circle at 30% 30%, #fff, var(--seed-color));
+            border-radius: 50%; box-shadow: 1px 1px 2px rgba(0,0,0,0.45), inset -1px -1px 2px rgba(0,0,0,0.25);
+        }
+        .controls { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .btn {
+            background: var(--board-color); color: white; border: none; padding: 11px 20px; font-size: 0.95rem;
+            font-weight: 600; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            transition: background 0.2s, transform 0.15s;
+        }
+        .btn:hover { background: #472d1a; transform: translateY(-1px); }
+        .btn.secondary { background: #7d5a3c; }
+        .btn.secondary:hover { background: #63472f; }
+        .btn.ai-on { background: #1a5276; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .info-section {
+            max-width: 860px; width: 100%; margin-top: 36px; background: #fff;
+            border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); overflow: hidden;
+        }
+        .tabs { display: flex; background: #f0e6d8; flex-wrap: wrap; }
+        .tab {
+            flex: 1; min-width: 100px; padding: 14px 10px; text-align: center; font-weight: 600; cursor: pointer;
+            border: none; background: transparent; color: #5c3a21; transition: background 0.2s; font-size: 0.92rem;
+        }
+        .tab.active { background: #fff; color: var(--board-color); box-shadow: 0 -2px 0 var(--accent) inset; }
+        .panel { display: none; padding: 22px 26px; font-size: 0.98rem; }
+        .panel.active { display: block; }
+        .panel h2 { color: var(--board-color); margin-bottom: 12px; font-size: 1.25rem; }
+        .panel h3 { margin: 16px 0 8px; color: #5c3a21; font-size: 1.05rem; }
+        .panel p, .panel li { margin-bottom: 8px; color: #3d2b1f; }
+        .panel ul { padding-left: 22px; margin-bottom: 12px; }
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 16px 0;
+        }
+        .stat-card {
+            background: #f8f1e3; border-radius: 12px; padding: 14px; text-align: center;
+            border: 1px solid #e0d0b8;
+        }
+        .stat-card .num { font-size: 1.6rem; font-weight: 700; color: var(--board-color); }
+        .stat-card .label { font-size: 0.8rem; color: #6b4c35; margin-top: 2px; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 12px; }
+        .history-table th, .history-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; }
+        .history-table th { background: #f5efe6; color: #5c3a21; font-weight: 600; }
+        .history-table tr:hover { background: #faf6f0; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+        .badge-win { background: #d5f5e3; color: #1e8449; }
+        .badge-loss { background: #fadbd8; color: #922b21; }
+        .badge-draw { background: #eaf2f8; color: #1a5276; }
+        .empty-history { color: #888; font-style: italic; padding: 20px 0; text-align: center; }
+        footer {
+            margin-top: 40px; text-align: center; font-size: 0.85rem; color: #7a5c42;
+            max-width: 700px; padding-bottom: 20px;
+        }
+        @media (max-width: 780px) {
+            .pits-grid { grid-template-rows: repeat(2, 68px); grid-template-columns: repeat(6, 68px); gap: 8px; }
+            .store { width: 56px; height: 160px; }
+            .seed { width: 10px; height: 10px; }
+            .gebeta-board { padding: 16px 10px; gap: 8px; border-radius: 28px; }
+        }
+        @media (max-width: 520px) {
+            .pits-grid { grid-template-rows: repeat(2, 52px); grid-template-columns: repeat(6, 52px); gap: 6px; }
+            .store { width: 44px; height: 130px; border-radius: 28px; }
+            .seed { width: 8px; height: 8px; }
+            .pit { padding: 6px; }
+            .tab { font-size: 0.82rem; padding: 12px 6px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Gebeta <span style="font-weight:400">(ገበጣ)</span></h1>
+    <div class="subtitle">Traditional Ethiopian Strategy Game • Count &amp; Capture</div>
+    <div class="credit">Software conversion &amp; digital preservation by <strong>Gizachew Hatau</strong></div>
+</header>
+
+<div id="status" class="status-panel status-turn-a">Player A’s Turn</div>
+
+<div class="gebeta-board" id="board">
+    <div class="store" id="store-b"><span class="store-label">Player B</span></div>
+    <div class="pits-grid">
+        <div class="pit" id="pit-11" data-index="11"></div>
+        <div class="pit" id="pit-10" data-index="10"></div>
+        <div class="pit" id="pit-9" data-index="9"></div>
+        <div class="pit" id="pit-8" data-index="8"></div>
+        <div class="pit" id="pit-7" data-index="7"></div>
+        <div class="pit" id="pit-6" data-index="6"></div>
+        <div class="pit" id="pit-0" data-index="0"></div>
+        <div class="pit" id="pit-1" data-index="1"></div>
+        <div class="pit" id="pit-2" data-index="2"></div>
+        <div class="pit" id="pit-3" data-index="3"></div>
+        <div class="pit" id="pit-4" data-index="4"></div>
+        <div class="pit" id="pit-5" data-index="5"></div>
+    </div>
+    <div class="store" id="store-a"><span class="store-label">Player A</span></div>
+</div>
+
+<div class="controls">
+    <button class="btn" id="btn-reset" onclick="initGame()">New Game</button>
+    <button class="btn secondary" id="btn-mode" onclick="toggleMode()">Mode: 2 Players</button>
+    <button class="btn secondary" onclick="showTab('history')">My History</button>
+    <button class="btn secondary" onclick="showTab('rules')">Rules</button>
+</div>
+
+<div class="info-section">
+    <div class="tabs">
+        <button class="tab active" data-tab="rules" onclick="showTab('rules')">How to Play</button>
+        <button class="tab" data-tab="history" onclick="showTab('history')">My History</button>
+        <button class="tab" data-tab="history-culture" onclick="showTab('history-culture')">History &amp; Culture</button>
+        <button class="tab" data-tab="about" onclick="showTab('about')">About</button>
+    </div>
+
+    <div id="panel-rules" class="panel active">
+        <h2>Rules of Gebeta (2×6 Educational Form)</h2>
+        <p>Clear Ethiopian educational variant used for teaching counting and strategy.</p>
+        <h3>Setup</h3>
+        <ul>
+            <li>2 rows of 6 pits (homes / <em>ቤት</em>). Each starts with <strong>4 seeds</strong> (48 total).</li>
+            <li>Two end stores hold captured seeds. Player A = bottom row, Player B = top row.</li>
+        </ul>
+        <h3>How to Move</h3>
+        <ul>
+            <li>Choose one of <strong>your</strong> non-empty pits. Sow seeds one-by-one anti-clockwise.</li>
+            <li><strong>Multi-lap</strong>: If the last seed lands in an occupied pit, pick up all seeds there and continue. Turn ends only when the last seed lands in an empty pit.</li>
+        </ul>
+        <h3>Capturing Fours</h3>
+        <ul>
+            <li>Whenever a pit reaches exactly 4 during sowing, those 4 are captured by the <em>owner</em> of the pit.</li>
+            <li><strong>Exception</strong>: If the final seed of a sowing makes a four, the <em>sowing player</em> captures them.</li>
+        </ul>
+        <h3>End of Game</h3>
+        <ul>
+            <li>Pass when you have no seeds on your side. After three consecutive passes by one player the game ends.</li>
+            <li>Remaining seeds go into the respective stores. Highest captured total wins.</li>
+        </ul>
+    </div>
+
+    <div id="panel-history" class="panel">
+        <h2>Your Game History</h2>
+        <p>Your results are saved automatically in this browser (like many classic online game sites). Data stays private on your device.</p>
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card"><div class="num" id="stat-played">0</div><div class="label">Games Played</div></div>
+            <div class="stat-card"><div class="num" id="stat-wins">0</div><div class="label">Wins (You / A)</div></div>
+            <div class="stat-card"><div class="num" id="stat-losses">0</div><div class="label">Losses</div></div>
+            <div class="stat-card"><div class="num" id="stat-draws">0</div><div class="label">Draws</div></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+            <button class="btn secondary" onclick="clearHistory()" style="font-size:0.85rem; padding:8px 14px;">Clear History</button>
+            <button class="btn secondary" onclick="exportHistory()" style="font-size:0.85rem; padding:8px 14px;">Export JSON</button>
+        </div>
+        <div id="history-list"></div>
+    </div>
+
+    <div id="panel-history-culture" class="panel">
+        <h2>History &amp; Cultural Significance</h2>
+        <p><strong>Gebeta</strong> (ገበጣ) is an Ethiopian and Eritrean form of the ancient African count-and-capture family of games. Archaeological evidence from Yeha, Axum and Matara shows boards and rock-cut pits from the 6th–7th centuries AD (Aksumite period).</p>
+        <p>A 14th-century Ge’ez text by Giyorgis of Segla mentions <em>qarqis</em>, referring to both Gebeta and Ethiopian chess (Senterej). The game has long been played by children and elders, often dug into the earth or carved in wood, and appears at social gatherings and after harvest.</p>
+        <p>Modern Ethiopian educators value Gebeta for culturally responsive mathematics: counting, directionality, prediction and strategic thinking while staying rooted in local heritage.</p>
+    </div>
+
+    <div id="panel-about" class="panel">
+        <h2>About This Version</h2>
+        <p>Designed, coded and culturally documented by <strong>Gizachew Hatau</strong> as a software conversion and digital preservation project.</p>
+        <ul>
+            <li>Authentic Ethiopian rules and cultural context</li>
+            <li>Local multiplayer + AI opponent</li>
+            <li>Personal game history stored in your browser</li>
+            <li>Fully offline-capable single HTML file</li>
+            <li>Open source on GitHub</li>
+        </ul>
+        <p style="margin-top:14px; font-weight:600; color:#5c3a21;">Created with respect for the generations who have played Gebeta before us.</p>
+        <p>— Gizachew Hatau</p>
+    </div>
+</div>
+
+<footer>
+    Gebeta (ገበጣ) — Traditional Ethiopian Strategy Game<br>
+    Software conversion &amp; digital preservation by <strong>Gizachew Hatau</strong><br>
+    <a href="https://github.com/GizachewL/gebeta" style="color:#8b5a2b;">github.com/GizachewL/gebeta</a>
+</footer>
+
+<script>
+(function() {
+    'use strict';
+    const STORAGE_KEY = 'gebeta_history_v1';
+    let board = [];
+    let storeA = 0, storeB = 0;
+    let activePlayer = 'A';
+    let isAnimating = false;
+    let passCountA = 0, passCountB = 0;
+    let gameOver = false;
+    let vsAI = false;
+    let aiThinking = false;
+    let gameStartTime = null;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    function loadHistory() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) { return []; }
+    }
+    function saveHistory(list) {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, 200)));
+        } catch (e) { console.warn('Could not save history', e); }
+    }
+    function recordGame(result) {
+        const entry = {
+            id: Date.now(),
+            date: new Date().toISOString(),
+            mode: vsAI ? 'vs AI' : '2 Players',
+            scoreA: storeA,
+            scoreB: storeB,
+            winner: result,
+            durationSec: gameStartTime ? Math.round((Date.now() - gameStartTime) / 1000) : null
+        };
+        const list = loadHistory();
+        list.unshift(entry);
+        saveHistory(list);
+        renderHistory();
+    }
+    function clearHistory() {
+        if (confirm('Clear all saved game history from this browser?')) {
+            localStorage.removeItem(STORAGE_KEY);
+            renderHistory();
+        }
+    }
+    function exportHistory() {
+        const data = JSON.stringify(loadHistory(), null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'gebeta-history.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    function renderHistory() {
+        const list = loadHistory();
+        let wins = 0, losses = 0, draws = 0;
+        list.forEach(g => {
+            if (g.winner === 'A') wins++;
+            else if (g.winner === 'B') losses++;
+            else draws++;
+        });
+        document.getElementById('stat-played').textContent = list.length;
+        document.getElementById('stat-wins').textContent = wins;
+        document.getElementById('stat-losses').textContent = losses;
+        document.getElementById('stat-draws').textContent = draws;
+
+        const container = document.getElementById('history-list');
+        if (list.length === 0) {
+            container.innerHTML = '<div class="empty-history">No games recorded yet. Play a match and it will appear here.</div>';
+            return;
+        }
+        let html = '<table class="history-table"><thead><tr><th>Date</th><th>Mode</th><th>Score</th><th>Result</th><th>Time</th></tr></thead><tbody>';
+        list.slice(0, 50).forEach(g => {
+            const d = new Date(g.date);
+            const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            let badge = '';
+            if (g.winner === 'A') badge = '<span class="badge badge-win">A wins</span>';
+            else if (g.winner === 'B') badge = '<span class="badge badge-loss">B wins</span>';
+            else badge = '<span class="badge badge-draw">Draw</span>';
+            const dur = g.durationSec != null ? (g.durationSec < 60 ? g.durationSec + 's' : Math.floor(g.durationSec/60) + 'm ' + (g.durationSec%60) + 's') : '—';
+            html += '<tr><td>' + dateStr + '</td><td>' + g.mode + '</td><td>' + g.scoreA + ' – ' + g.scoreB + '</td><td>' + badge + '</td><td>' + dur + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        if (list.length > 50) html += '<p style="margin-top:8px;font-size:0.85rem;color:#888;">Showing latest 50 of ' + list.length + ' games.</p>';
+        container.innerHTML = html;
+    }
+
+    function initGame() {
+        board = Array(12).fill(4);
+        storeA = 0; storeB = 0;
+        activePlayer = 'A';
+        isAnimating = false;
+        passCountA = 0; passCountB = 0;
+        gameOver = false;
+        aiThinking = false;
+        gameStartTime = Date.now();
+        updateUI();
+        if (vsAI && activePlayer === 'B') setTimeout(aiMove, 600);
+    }
+
+    function updateUI() {
+        for (let i = 0; i < 12; i++) {
+            const pitEl = document.getElementById('pit-' + i);
+            pitEl.innerHTML = '<span class="pit-count">' + (board[i] > 0 ? board[i] : '') + '</span>';
+            for (let s = 0; s < Math.min(board[i], 20); s++) {
+                const seed = document.createElement('div');
+                seed.className = 'seed';
+                pitEl.appendChild(seed);
+            }
+            pitEl.className = 'pit';
+            if (!isAnimating && !gameOver && !aiThinking) {
+                if (activePlayer === 'A' && i <= 5 && board[i] > 0) pitEl.classList.add('playable-a');
+                else if (activePlayer === 'B' && i >= 6 && board[i] > 0 && !vsAI) pitEl.classList.add('playable-b');
+                else pitEl.classList.add('disabled');
+            } else pitEl.classList.add('disabled');
+            pitEl.onclick = function() { makeMove(i); };
+        }
+        const storeAEl = document.getElementById('store-a');
+        storeAEl.innerHTML = '<span class="store-label">Player A (' + storeA + ')</span>';
+        for (let s = 0; s < Math.min(storeA, 36); s++) {
+            const seed = document.createElement('div'); seed.className = 'seed'; storeAEl.appendChild(seed);
+        }
+        const storeBEl = document.getElementById('store-b');
+        storeBEl.innerHTML = '<span class="store-label">Player B (' + storeB + ')</span>';
+        for (let s = 0; s < Math.min(storeB, 36); s++) {
+            const seed = document.createElement('div'); seed.className = 'seed'; storeBEl.appendChild(seed);
+        }
+        const statusEl = document.getElementById('status');
+        if (gameOver) {
+            let msg = storeA > storeB ? 'Player A wins! (' + storeA + ' – ' + storeB + ')' :
+                      storeB > storeA ? 'Player B wins! (' + storeB + ' – ' + storeA + ')' :
+                      'Draw! (' + storeA + ' – ' + storeB + ')';
+            statusEl.innerText = msg;
+            statusEl.className = 'status-panel status-win';
+        } else if (aiThinking) {
+            statusEl.innerText = 'AI is thinking…';
+            statusEl.className = 'status-panel status-turn-b';
+        } else {
+            statusEl.innerText = "Player " + activePlayer + "'s Turn";
+            statusEl.className = 'status-panel status-turn-' + activePlayer.toLowerCase();
+        }
+    }
+
+    function nextIndex(i) { return (i + 1) % 12; }
+    function ownerOf(pit) { return pit <= 5 ? 'A' : 'B'; }
+    function hasMoves(player) {
+        if (player === 'A') { for (let i = 0; i < 6; i++) if (board[i] > 0) return true; }
+        else { for (let i = 6; i < 12; i++) if (board[i] > 0) return true; }
+        return false;
+    }
+
+    async function executeMove(startIndex) {
+        if (isAnimating || gameOver || aiThinking) return false;
+        if (activePlayer === 'A' && (startIndex < 0 || startIndex > 5)) return false;
+        if (activePlayer === 'B' && (startIndex < 6 || startIndex > 11)) return false;
+        if (board[startIndex] === 0) return false;
+        if (vsAI && activePlayer === 'B') return false;
+
+        isAnimating = true;
+        updateUI();
+
+        let pos = startIndex;
+        let seedsInHand = board[pos];
+        board[pos] = 0;
+        updateUI();
+        await sleep(180);
+
+        while (true) {
+            while (seedsInHand > 0) {
+                pos = nextIndex(pos);
+                board[pos]++;
+                seedsInHand--;
+                const el = document.getElementById('pit-' + pos);
+                el.classList.add('highlight');
+                updateUI();
+                await sleep(120);
+                el.classList.remove('highlight');
+
+                if (board[pos] === 4 && seedsInHand > 0) {
+                    const owner = ownerOf(pos);
+                    if (owner === 'A') storeA += 4; else storeB += 4;
+                    board[pos] = 0;
+                    updateUI();
+                    await sleep(160);
+                }
+            }
+            if (board[pos] === 4) {
+                if (activePlayer === 'A') storeA += 4; else storeB += 4;
+                board[pos] = 0;
+                updateUI();
+                await sleep(180);
+                break;
+            }
+            if (board[pos] === 1) break;
+            seedsInHand = board[pos];
+            board[pos] = 0;
+            updateUI();
+            await sleep(140);
+        }
+
+        isAnimating = false;
+        checkEndAndSwitch();
+        updateUI();
+        if (!gameOver && vsAI && activePlayer === 'B') setTimeout(aiMove, 600);
+        return true;
+    }
+
+    function makeMove(idx) { executeMove(idx); }
+
+    function checkEndAndSwitch() {
+        const previous = activePlayer;
+        activePlayer = activePlayer === 'A' ? 'B' : 'A';
+        if (!hasMoves(activePlayer)) {
+            if (activePlayer === 'A') passCountA++; else passCountB++;
+            if ((activePlayer === 'A' && passCountA >= 3) || (activePlayer === 'B' && passCountB >= 3)) {
+                endGame();
+                return;
+            }
+            activePlayer = previous;
+            if (!hasMoves(activePlayer)) endGame();
+        } else {
+            if (activePlayer === 'A') passCountA = 0; else passCountB = 0;
+        }
+    }
+
+    function endGame() {
+        for (let i = 0; i < 6; i++) { storeA += board[i]; board[i] = 0; }
+        for (let i = 6; i < 12; i++) { storeB += board[i]; board[i] = 0; }
+        gameOver = true;
+        isAnimating = false;
+        let result = 'draw';
+        if (storeA > storeB) result = 'A';
+        else if (storeB > storeA) result = 'B';
+        recordGame(result);
+        updateUI();
+    }
+
+    async function aiMove() {
+        if (gameOver || activePlayer !== 'B' || !vsAI) return;
+        aiThinking = true;
+        updateUI();
+        await sleep(400 + Math.random() * 350);
+        const candidates = [];
+        for (let i = 6; i < 12; i++) if (board[i] > 0) candidates.push(i);
+        if (candidates.length === 0) {
+            aiThinking = false;
+            checkEndAndSwitch();
+            updateUI();
+            return;
+        }
+        let bestScore = -Infinity, bestMove = candidates[0];
+        for (const m of candidates) {
+            let score = 0;
+            const seeds = board[m];
+            let pos = m, temp = board.slice(), hand = seeds;
+            temp[m] = 0;
+            let captures = 0;
+            while (hand > 0) {
+                pos = (pos + 1) % 12;
+                temp[pos]++;
+                hand--;
+                if (temp[pos] === 4) { captures += 4; temp[pos] = 0; }
+            }
+            score += captures * 14;
+            if (pos >= 6) score += 4;
+            score += seeds * 0.4 + Math.random() * 3;
+            if (score > bestScore) { bestScore = score; bestMove = m; }
+        }
+        aiThinking = false;
+        await executeMove(bestMove);
+    }
+
+    function toggleMode() {
+        vsAI = !vsAI;
+        const btn = document.getElementById('btn-mode');
+        btn.textContent = vsAI ? 'Mode: vs AI' : 'Mode: 2 Players';
+        btn.classList.toggle('ai-on', vsAI);
+        initGame();
+    }
+
+    function showTab(name) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        const tab = document.querySelector('.tab[data-tab="' + name + '"]');
+        if (tab) tab.classList.add('active');
+        const panel = document.getElementById('panel-' + name);
+        if (panel) panel.classList.add('active');
+        if (name === 'history') renderHistory();
+        document.querySelector('.info-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    window.initGame = initGame;
+    window.toggleMode = toggleMode;
+    window.showTab = showTab;
+    window.clearHistory = clearHistory;
+    window.exportHistory = exportHistory;
+    window.makeMove = makeMove;
+
+    renderHistory();
+    initGame();
+})();
+</script>
+</body>
+</html>
