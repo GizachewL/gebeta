@@ -1,1 +1,457 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Gebeta (ገበጣ) – Play online with skill matchmaking. Ethiopian strategy game by Gizachew Hatau.">
+<title>Gebeta (ገበጣ) Online | Gizachew Hatau</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root {
+  --board-color:#5c3a21; --pit-color:#3d2514;
+  --player-a-color:#27ae60; --player-b-color:#c0392b;
+  --seed-color:#ecf0f1; --seed-highlight:#f1c40f; --text:#2c1810; --accent:#8b5a2b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(160deg,#f8f1e3,#e8d9c0);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:12px;line-height:1.5}
+header{text-align:center;margin-bottom:8px;max-width:920px}
+h1{font-size:clamp(1.5rem,5vw,2.2rem);color:var(--board-color)}
+.subtitle{font-size:.9rem;color:#6b4c35}
+.credit{font-size:.8rem;margin-top:4px;color:#8b5a2b;font-weight:600}
+.top-bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin:10px 0;width:100%;max-width:900px}
+.user-chip{background:#fff;padding:6px 14px;border-radius:20px;font-size:.85rem;box-shadow:0 2px 6px rgba(0,0,0,.08);font-weight:600}
+.status-panel{font-size:1.1rem;font-weight:700;margin:8px 0 14px;padding:10px 22px;border-radius:30px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.08);min-width:200px;text-align:center}
+.status-turn-a{color:var(--player-a-color);border:2px solid var(--player-a-color)}
+.status-turn-b{color:var(--player-b-color);border:2px solid var(--player-b-color)}
+.status-win{color:#1a5276;border:2px solid #1a5276;background:#eaf2f8}
+.status-queue{color:#7d3c98;border:2px solid #7d3c98}
+.gebeta-board{background:var(--board-color);padding:20px 16px;border-radius:32px;box-shadow:0 16px 36px rgba(0,0,0,.35),inset 0 3px 10px rgba(255,255,255,.12);display:flex;align-items:center;gap:12px;user-select:none;max-width:100%;overflow-x:auto}
+.store{width:68px;height:190px;background:var(--pit-color);border-radius:34px;box-shadow:inset 0 8px 12px rgba(0,0,0,.55);display:flex;flex-direction:column;flex-wrap:wrap;align-content:center;justify-content:center;gap:3px;padding:8px 6px;position:relative}
+.store-label{position:absolute;color:rgba(255,255,255,.55);font-size:.7rem;font-weight:700;bottom:-20px;left:50%;transform:translateX(-50%);white-space:nowrap}
+.pits-grid{display:grid;grid-template-rows:repeat(2,84px);grid-template-columns:repeat(6,84px);gap:10px}
+.pit{background:var(--pit-color);border-radius:50%;box-shadow:inset 0 6px 10px rgba(0,0,0,.55);cursor:pointer;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:3px;padding:8px;transition:transform .15s,box-shadow .15s;position:relative}
+.pit.playable-a:hover{transform:scale(1.06);box-shadow:inset 0 6px 10px rgba(0,0,0,.55),0 0 14px var(--player-a-color)}
+.pit.playable-b:hover{transform:scale(1.06);box-shadow:inset 0 6px 10px rgba(0,0,0,.55),0 0 14px var(--player-b-color)}
+.pit.disabled{cursor:not-allowed;opacity:.92}
+.pit.highlight{box-shadow:inset 0 6px 10px rgba(0,0,0,.55),0 0 16px var(--seed-highlight)}
+.pit-count{position:absolute;color:rgba(255,255,255,.75);font-size:.8rem;font-weight:700;top:5px;right:7px;pointer-events:none}
+.seed{width:12px;height:12px;background:radial-gradient(circle at 30% 30%,#fff,var(--seed-color));border-radius:50%;box-shadow:1px 1px 2px rgba(0,0,0,.4)}
+.controls{margin-top:24px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.btn{background:var(--board-color);color:#fff;border:none;padding:10px 18px;font-size:.9rem;font-weight:600;border-radius:10px;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,.15)}
+.btn:hover{background:#472d1a}
+.btn.secondary{background:#7d5a3c}
+.btn.secondary:hover{background:#63472f}
+.btn.online{background:#1a5276}
+.btn.online:hover{background:#154360}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:16px;padding:24px;max-width:400px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal h2{color:var(--board-color);margin-bottom:12px;font-size:1.2rem}
+.modal label{display:block;font-size:.85rem;font-weight:600;margin:10px 0 4px}
+.modal input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:1rem}
+.modal .err{color:#c0392b;font-size:.85rem;margin-top:8px;min-height:1.2em}
+.modal .actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.info-section{max-width:860px;width:100%;margin-top:28px;background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08);overflow:hidden}
+.tabs{display:flex;background:#f0e6d8;flex-wrap:wrap}
+.tab{flex:1;min-width:90px;padding:12px 8px;text-align:center;font-weight:600;cursor:pointer;border:none;background:transparent;color:#5c3a21;font-size:.88rem}
+.tab.active{background:#fff;box-shadow:0 -2px 0 var(--accent) inset}
+.panel{display:none;padding:20px 24px;font-size:.95rem}
+.panel.active{display:block}
+.panel h2{color:var(--board-color);margin-bottom:10px;font-size:1.15rem}
+.panel h3{margin:14px 0 6px;color:#5c3a21}
+.panel ul{padding-left:20px;margin-bottom:10px}
+.leaderboard{list-style:none;padding:0}
+.leaderboard li{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #eee;font-size:.9rem}
+.leaderboard li:nth-child(odd){background:#faf6f0}
+footer{margin-top:32px;text-align:center;font-size:.8rem;color:#7a5c42;padding-bottom:16px}
+@media(max-width:780px){.pits-grid{grid-template-rows:repeat(2,64px);grid-template-columns:repeat(6,64px);gap:8px}.store{width:52px;height:150px}.seed{width:9px;height:9px}}
+@media(max-width:520px){.pits-grid{grid-template-rows:repeat(2,50px);grid-template-columns:repeat(6,50px);gap:5px}.store{width:42px;height:120px}.seed{width:7px;height:7px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gebeta <span style="font-weight:400">(ገበጣ)</span></h1>
+  <div class="subtitle">Traditional Ethiopian Strategy · Online Multiplayer · Skill Matchmaking</div>
+  <div class="credit">Software by <strong>Gizachew Hatau</strong></div>
+</header>
+
+<div class="top-bar" id="top-bar">
+  <span class="user-chip" id="user-chip">Guest</span>
+  <button class="btn secondary" id="btn-auth" onclick="openAuth()">Log in / Register</button>
+  <button class="btn secondary" id="btn-logout" style="display:none" onclick="logout()">Log out</button>
+</div>
+
+<div id="status" class="status-panel status-turn-a">Player A's Turn</div>
+
+<div class="gebeta-board" id="board">
+  <div class="store" id="store-b"><span class="store-label">Player B</span></div>
+  <div class="pits-grid">
+    <div class="pit" id="pit-11"></div><div class="pit" id="pit-10"></div><div class="pit" id="pit-9"></div>
+    <div class="pit" id="pit-8"></div><div class="pit" id="pit-7"></div><div class="pit" id="pit-6"></div>
+    <div class="pit" id="pit-0"></div><div class="pit" id="pit-1"></div><div class="pit" id="pit-2"></div>
+    <div class="pit" id="pit-3"></div><div class="pit" id="pit-4"></div><div class="pit" id="pit-5"></div>
+  </div>
+  <div class="store" id="store-a"><span class="store-label">Player A</span></div>
+</div>
+
+<div class="controls">
+  <button class="btn" onclick="newLocalGame()">New Local Game</button>
+  <button class="btn secondary" id="btn-mode" onclick="toggleAI()">Mode: 2 Players</button>
+  <button class="btn online" id="btn-online" onclick="findMatch()">Play Online</button>
+  <button class="btn secondary" id="btn-cancel-queue" style="display:none" onclick="cancelMatch()">Cancel Search</button>
+  <button class="btn secondary" onclick="showTab('leaderboard')">Leaderboard</button>
+</div>
+
+<div class="info-section">
+  <div class="tabs">
+    <button class="tab active" data-tab="rules" onclick="showTab('rules')">Rules</button>
+    <button class="tab" data-tab="online" onclick="showTab('online')">Online Play</button>
+    <button class="tab" data-tab="leaderboard" onclick="showTab('leaderboard')">Leaderboard</button>
+    <button class="tab" data-tab="about" onclick="showTab('about')">About</button>
+  </div>
+  <div id="panel-rules" class="panel active">
+    <h2>How to Play</h2>
+    <p>2×6 board, 4 seeds per pit. Sow anti-clockwise. Multi-lap if last seed lands in an occupied pit. Capture exact fours. Highest store wins.</p>
+    <h3>Online</h3>
+    <p>Create an account, then click <strong>Play Online</strong>. You are matched with players near your skill rating.</p>
+  </div>
+  <div id="panel-online" class="panel">
+    <h2>Online Multiplayer</h2>
+    <p>Register a free account. Your <strong>rating</strong> starts at 1000. Win to climb levels: Beginner, Intermediate, Advanced, Expert, Master.</p>
+    <p>Matchmaking pairs you with opponents within about ±200 rating points.</p>
+  </div>
+  <div id="panel-leaderboard" class="panel">
+    <h2>Leaderboard</h2>
+    <ul class="leaderboard" id="leaderboard-list"><li>Loading…</li></ul>
+  </div>
+  <div id="panel-about" class="panel">
+    <h2>About</h2>
+    <p>Gebeta is an ancient Ethiopian count-and-capture game. Digital version by <strong>Gizachew Hatau</strong>.</p>
+  </div>
+</div>
+
+<footer>
+  Gebeta (ገበጣ) · Online multiplayer · Skill matchmaking<br>
+  Software by <strong>Gizachew Hatau</strong> · <a href="https://github.com/GizachewL/gebeta" style="color:#8b5a2b">GitHub</a>
+</footer>
+
+<div class="modal-overlay" id="auth-modal">
+  <div class="modal">
+    <h2 id="auth-title">Log in</h2>
+    <label>Username</label>
+    <input id="auth-user" autocomplete="username" maxlength="20" placeholder="3–20 characters">
+    <label>Password</label>
+    <input id="auth-pass" type="password" autocomplete="current-password" placeholder="min 4 characters">
+    <div class="err" id="auth-err"></div>
+    <div class="actions">
+      <button class="btn" onclick="submitAuth()">Continue</button>
+      <button class="btn secondary" onclick="toggleAuthMode()">Register instead</button>
+      <button class="btn secondary" onclick="closeAuth()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const TOKEN_KEY = 'gebeta_token';
+let token = localStorage.getItem(TOKEN_KEY) || null;
+let me = null;
+let socket = null;
+let board = [], storeA = 0, storeB = 0, activePlayer = 'A';
+let isAnimating = false, gameOver = false, vsAI = false, aiThinking = false;
+let passA = 0, passB = 0, gameStart = null;
+let mode = 'local', myColor = null, roomId = null, authIsRegister = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  return fetch(path, { ...opts, headers }).then(async r => {
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  });
+}
+
+async function refreshMe() {
+  if (!token) { me = null; updateUserUI(); return; }
+  try { const data = await api('/api/me'); me = data.user; }
+  catch { token = null; localStorage.removeItem(TOKEN_KEY); me = null; }
+  updateUserUI();
+}
+
+function updateUserUI() {
+  const chip = document.getElementById('user-chip');
+  const btnAuth = document.getElementById('btn-auth');
+  const btnLogout = document.getElementById('btn-logout');
+  if (me) {
+    chip.textContent = me.username + ' · ' + me.level + ' (' + me.rating + ') · W' + me.wins + '/L' + me.losses;
+    btnAuth.style.display = 'none'; btnLogout.style.display = '';
+  } else {
+    chip.textContent = 'Guest'; btnAuth.style.display = ''; btnLogout.style.display = 'none';
+  }
+}
+
+function openAuth() {
+  authIsRegister = false;
+  document.getElementById('auth-title').textContent = 'Log in';
+  document.getElementById('auth-err').textContent = '';
+  document.getElementById('auth-modal').classList.add('show');
+}
+function closeAuth() { document.getElementById('auth-modal').classList.remove('show'); }
+function toggleAuthMode() {
+  authIsRegister = !authIsRegister;
+  document.getElementById('auth-title').textContent = authIsRegister ? 'Create account' : 'Log in';
+  document.getElementById('auth-err').textContent = '';
+}
+async function submitAuth() {
+  const username = document.getElementById('auth-user').value.trim();
+  const password = document.getElementById('auth-pass').value;
+  const errEl = document.getElementById('auth-err');
+  errEl.textContent = '';
+  try {
+    const path = authIsRegister ? '/api/register' : '/api/login';
+    const data = await api(path, { method: 'POST', body: JSON.stringify({ username, password }) });
+    token = data.token; localStorage.setItem(TOKEN_KEY, token); me = data.user;
+    updateUserUI(); closeAuth(); connectSocket();
+  } catch (e) { errEl.textContent = e.message || 'Failed'; }
+}
+function logout() {
+  token = null; me = null; localStorage.removeItem(TOKEN_KEY);
+  if (socket) { socket.disconnect(); socket = null; }
+  updateUserUI();
+  if (mode === 'online') newLocalGame();
+}
+
+function connectSocket() {
+  if (!token) return;
+  if (socket) socket.disconnect();
+  socket = io({ auth: { token } });
+  socket.on('queue_status', (s) => {
+    const st = document.getElementById('status');
+    if (s.inQueue) {
+      st.className = 'status-panel status-queue';
+      st.textContent = 'Searching for opponent near your level… (rating ' + s.rating + ')';
+      document.getElementById('btn-cancel-queue').style.display = '';
+      document.getElementById('btn-online').disabled = true;
+    } else {
+      document.getElementById('btn-cancel-queue').style.display = 'none';
+      document.getElementById('btn-online').disabled = false;
+    }
+  });
+  socket.on('match_found', (m) => {
+    mode = 'online'; roomId = m.roomId; myColor = m.yourColor;
+    document.getElementById('btn-cancel-queue').style.display = 'none';
+    document.getElementById('btn-online').disabled = false;
+    const st = document.getElementById('status');
+    st.className = 'status-panel status-win';
+    st.textContent = 'Matched vs ' + m.opponent.username + ' (' + m.opponent.level + ', ' + m.opponent.rating + ') — You are Player ' + myColor;
+  });
+  socket.on('game_state', (gs) => {
+    if (mode !== 'online') return;
+    board = gs.board.slice(); storeA = gs.storeA; storeB = gs.storeB;
+    activePlayer = gs.turn; gameOver = gs.status === 'finished'; updateUI();
+  });
+  socket.on('game_over', (r) => {
+    gameOver = true;
+    const st = document.getElementById('status');
+    st.className = 'status-panel status-win';
+    st.textContent = (r.winner === 'draw' ? 'Draw! ' : ('Player ' + r.winner + ' wins! ')) + '(' + r.storeA + ' – ' + r.storeB + ')';
+    refreshMe(); loadLeaderboard();
+  });
+  socket.on('error_msg', (msg) => alert(msg));
+}
+
+function findMatch() {
+  if (!me) { openAuth(); return; }
+  if (!socket || !socket.connected) connectSocket();
+  setTimeout(() => socket && socket.emit('find_match'), 100);
+  mode = 'online';
+}
+function cancelMatch() {
+  if (socket) socket.emit('cancel_match');
+  document.getElementById('btn-cancel-queue').style.display = 'none';
+  document.getElementById('btn-online').disabled = false;
+  if (mode === 'online' && !roomId) newLocalGame();
+}
+
+function newLocalGame() {
+  mode = 'local'; roomId = null; myColor = null;
+  board = Array(12).fill(4); storeA = 0; storeB = 0;
+  activePlayer = 'A'; isAnimating = false; gameOver = false; aiThinking = false;
+  passA = 0; passB = 0; gameStart = Date.now(); updateUI();
+  if (vsAI && activePlayer === 'B') setTimeout(aiMove, 500);
+}
+function toggleAI() {
+  vsAI = !vsAI;
+  document.getElementById('btn-mode').textContent = vsAI ? 'Mode: vs AI' : 'Mode: 2 Players';
+  newLocalGame();
+}
+
+function updateUI() {
+  for (let i = 0; i < 12; i++) {
+    const el = document.getElementById('pit-' + i);
+    el.innerHTML = '<span class="pit-count">' + (board[i] > 0 ? board[i] : '') + '</span>';
+    for (let s = 0; s < Math.min(board[i], 18); s++) {
+      const d = document.createElement('div'); d.className = 'seed'; el.appendChild(d);
+    }
+    el.className = 'pit';
+    let canPlay = false;
+    if (!isAnimating && !gameOver && !aiThinking) {
+      if (mode === 'online') {
+        if (myColor === activePlayer) {
+          if (myColor === 'A' && i <= 5 && board[i] > 0) canPlay = true;
+          if (myColor === 'B' && i >= 6 && board[i] > 0) canPlay = true;
+        }
+      } else {
+        if (activePlayer === 'A' && i <= 5 && board[i] > 0) canPlay = true;
+        if (activePlayer === 'B' && i >= 6 && board[i] > 0 && !vsAI) canPlay = true;
+      }
+    }
+    if (canPlay) el.classList.add(activePlayer === 'A' ? 'playable-a' : 'playable-b');
+    else el.classList.add('disabled');
+    el.onclick = () => onPitClick(i);
+  }
+  const sa = document.getElementById('store-a');
+  sa.innerHTML = '<span class="store-label">A (' + storeA + ')</span>';
+  for (let s = 0; s < Math.min(storeA, 30); s++) { const d = document.createElement('div'); d.className = 'seed'; sa.appendChild(d); }
+  const sb = document.getElementById('store-b');
+  sb.innerHTML = '<span class="store-label">B (' + storeB + ')</span>';
+  for (let s = 0; s < Math.min(storeB, 30); s++) { const d = document.createElement('div'); d.className = 'seed'; sb.appendChild(d); }
+  if (mode === 'online' && !gameOver) {
+    const st = document.getElementById('status');
+    if (!st.classList.contains('status-queue')) {
+      st.className = 'status-panel status-turn-' + activePlayer.toLowerCase();
+      st.textContent = (activePlayer === myColor ? 'Your turn' : "Opponent's turn") + ' (Player ' + activePlayer + ')';
+    }
+  } else if (mode === 'local' && !gameOver) {
+    const st = document.getElementById('status');
+    if (aiThinking) { st.textContent = 'AI thinking…'; st.className = 'status-panel status-turn-b'; }
+    else { st.textContent = "Player " + activePlayer + "'s Turn"; st.className = 'status-panel status-turn-' + activePlayer.toLowerCase(); }
+  }
+}
+
+function onPitClick(i) {
+  if (mode === 'online') {
+    if (!socket || myColor !== activePlayer || gameOver) return;
+    socket.emit('make_move', { roomId, index: i }); return;
+  }
+  executeLocalMove(i);
+}
+
+async function executeLocalMove(start) {
+  if (isAnimating || gameOver || aiThinking) return;
+  if (activePlayer === 'A' && (start < 0 || start > 5)) return;
+  if (activePlayer === 'B' && (start < 6 || start > 11)) return;
+  if (board[start] === 0) return;
+  if (vsAI && activePlayer === 'B') return;
+  isAnimating = true; updateUI();
+  let pos = start, hand = board[pos]; board[pos] = 0; updateUI(); await sleep(150);
+  const next = i => (i + 1) % 12;
+  const owner = i => i <= 5 ? 'A' : 'B';
+  while (true) {
+    while (hand > 0) {
+      pos = next(pos); board[pos]++; hand--;
+      const el = document.getElementById('pit-' + pos);
+      el.classList.add('highlight'); updateUI(); await sleep(110); el.classList.remove('highlight');
+      if (board[pos] === 4 && hand > 0) {
+        if (owner(pos) === 'A') storeA += 4; else storeB += 4;
+        board[pos] = 0; updateUI(); await sleep(140);
+      }
+    }
+    if (board[pos] === 4) {
+      if (activePlayer === 'A') storeA += 4; else storeB += 4;
+      board[pos] = 0; updateUI(); await sleep(150); break;
+    }
+    if (board[pos] === 1) break;
+    hand = board[pos]; board[pos] = 0; updateUI(); await sleep(120);
+  }
+  isAnimating = false; switchLocalTurn(); updateUI();
+  if (!gameOver && vsAI && activePlayer === 'B') setTimeout(aiMove, 500);
+}
+
+function hasMoves(p) {
+  const [a,b] = p === 'A' ? [0,5] : [6,11];
+  for (let i = a; i <= b; i++) if (board[i] > 0) return true;
+  return false;
+}
+function switchLocalTurn() {
+  const prev = activePlayer;
+  activePlayer = activePlayer === 'A' ? 'B' : 'A';
+  if (!hasMoves(activePlayer)) {
+    if (activePlayer === 'A') passA++; else passB++;
+    if ((activePlayer === 'A' && passA >= 3) || (activePlayer === 'B' && passB >= 3)) { endLocal(); return; }
+    activePlayer = prev;
+    if (!hasMoves(activePlayer)) endLocal();
+  } else {
+    if (activePlayer === 'A') passA = 0; else passB = 0;
+  }
+}
+function endLocal() {
+  for (let i = 0; i < 6; i++) { storeA += board[i]; board[i] = 0; }
+  for (let i = 6; i < 12; i++) { storeB += board[i]; board[i] = 0; }
+  gameOver = true;
+  const st = document.getElementById('status');
+  st.className = 'status-panel status-win';
+  st.textContent = storeA > storeB ? 'Player A wins! ('+storeA+' – '+storeB+')' : storeB > storeA ? 'Player B wins! ('+storeB+' – '+storeA+')' : 'Draw! ('+storeA+' – '+storeB+')';
+  updateUI();
+  try {
+    fetch('/api/games', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      mode: vsAI ? 'vs AI' : '2 Players', scoreA: storeA, scoreB: storeB,
+      winner: storeA>storeB?'A':storeB>storeA?'B':'draw',
+      durationSec: gameStart ? Math.round((Date.now()-gameStart)/1000) : null,
+      playerId: me ? me.id : 'anonymous'
+    })});
+  } catch(e){}
+}
+
+async function aiMove() {
+  if (gameOver || activePlayer !== 'B' || !vsAI) return;
+  aiThinking = true; updateUI();
+  await sleep(350 + Math.random()*300);
+  const cands = []; for (let i=6;i<12;i++) if (board[i]>0) cands.push(i);
+  if (!cands.length) { aiThinking=false; switchLocalTurn(); updateUI(); return; }
+  let best = cands[0], bestScore = -1e9;
+  for (const m of cands) {
+    let score = board[m]*0.4 + Math.random()*3;
+    let pos=m, temp=board.slice(), hand=board[m]; temp[m]=0;
+    while(hand>0){ pos=(pos+1)%12; temp[pos]++; hand--; if(temp[pos]===4){ score+=12; temp[pos]=0; } }
+    if (score > bestScore) { bestScore=score; best=m; }
+  }
+  aiThinking = false; await executeLocalMove(best);
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const tab = document.querySelector('.tab[data-tab="'+name+'"]');
+  if (tab) tab.classList.add('active');
+  const panel = document.getElementById('panel-'+name);
+  if (panel) panel.classList.add('active');
+  if (name === 'leaderboard') loadLeaderboard();
+}
+async function loadLeaderboard() {
+  const ul = document.getElementById('leaderboard-list');
+  try {
+    const data = await api('/api/leaderboard');
+    if (!data.leaderboard.length) { ul.innerHTML = '<li>No players yet — be the first!</li>'; return; }
+    ul.innerHTML = data.leaderboard.map((u,i) =>
+      '<li><span>#'+(i+1)+' '+u.username+' · '+u.level+'</span><span>'+u.rating+' · W'+u.wins+'/L'+u.losses+'</span></li>'
+    ).join('');
+  } catch { ul.innerHTML = '<li>Could not load leaderboard</li>'; }
+}
+
+window.newLocalGame = newLocalGame; window.toggleAI = toggleAI;
+window.findMatch = findMatch; window.cancelMatch = cancelMatch;
+window.openAuth = openAuth; window.closeAuth = closeAuth;
+window.toggleAuthMode = toggleAuthMode; window.submitAuth = submitAuth;
+window.logout = logout; window.showTab = showTab;
+
+refreshMe().then(() => { if (token) connectSocket(); });
+newLocalGame(); loadLeaderboard();
+})();
+</script>
+</body>
+</html>
