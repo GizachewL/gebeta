@@ -2,62 +2,102 @@
 
 **Software conversion & digital preservation by Gizachew Hatau**
 
-A complete, culturally authentic, playable web implementation of the classic Ethiopian mancala game **Gebeta** (also spelled Gabata / Gebet’a).
+Complete playable web app of the classic Ethiopian mancala game **Gebeta**, with optional Node.js backend for server-side game history.
 
-**Live / Play:** Open `index.html` in any modern browser (works fully offline).
+**Repository:** https://github.com/GizachewL/gebeta
 
 ## Features
 
-- Accurate Ethiopian 2×6 educational rules (multi-lap sowing, capture of fours)
+- Authentic Ethiopian 2×6 educational rules (multi-lap sowing, capture of fours)
 - Animated seed sowing
 - Local 2-player mode + AI opponent
-- **Personal game history** stored in the browser (wins, losses, scores, duration) — private to your device
+- **Personal game history**
+  - Browser `localStorage` (works offline / static hosting)
+  - Optional **backend API** to store history on the server
 - Export history as JSON
-- Full history & culture panel + clear rules
-- Responsive design (desktop & mobile)
-- Single-file, zero-dependency, reliable
+- Full culture & rules panels
+- Responsive, zero frontend build step
 
-## Quick Start
+## Quick start – static (no server)
+
+Open `index.html` (or `public/index.html`) in any browser. History is saved in the browser only.
 
 ```bash
-# Clone
 git clone https://github.com/GizachewL/gebeta.git
 cd gebeta
-
-# Open in browser
-open index.html   # or double-click index.html
+# double-click index.html or:
+python3 -m http.server 8080   # then open http://localhost:8080
 ```
 
-Or simply download `index.html` and open it.
+## Quick start – with backend
 
-## Game History Storage
+Requires Node.js 18+.
 
-Game results are saved automatically using the browser’s `localStorage` (same pattern used by many classic online board-game sites). Your history stays on your device — no account or server required. You can clear it or export it as JSON from the **My History** tab.
+```bash
+git clone https://github.com/GizachewL/gebeta.git
+cd gebeta
+npm install
+npm start
+```
+
+Open **http://localhost:3000**
+
+The server serves the frontend and provides the history API. Finished games are saved both in the browser and on the server (`data/games.json`).
+
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/games?playerId=&limit=` | List games |
+| `GET` | `/api/stats?playerId=` | Win / loss / draw counts |
+| `POST` | `/api/games` | Record a finished game |
+| `DELETE` | `/api/games?playerId=` | Clear a player’s server history |
+
+Example body for `POST /api/games`:
+
+```json
+{
+  "playerId": "optional-client-id",
+  "mode": "vs AI",
+  "scoreA": 28,
+  "scoreB": 20,
+  "winner": "A",
+  "durationSec": 95
+}
+```
+
+## Project structure
+
+```
+gebeta/
+├── public/
+│   └── index.html      # Frontend (game + UI)
+├── server.js           # Express backend
+├── package.json
+├── data/               # Created at runtime (games.json) – gitignored
+├── index.html          # Same frontend (for static / GitHub Pages)
+├── README.md
+├── LICENSE
+└── .gitignore
+```
 
 ## Rules (summary)
 
-- 2×6 board, 4 seeds per pit
-- Sow anti-clockwise; multi-lap when last seed lands in an occupied pit
-- Capture groups of exactly 4 (owner of the pit, or sower if it is the final seed)
-- Pass when no seeds remain on your side; three consecutive passes ends the game
-- Highest captured total wins
-
-See the in-app **How to Play** panel for full details.
+- 2×6 board, 4 seeds per pit  
+- Sow anti-clockwise; multi-lap when last seed lands in an occupied pit  
+- Capture groups of exactly 4  
+- Three consecutive passes ends the game; highest captured total wins  
 
 ## History of Gebeta
 
-Archaeological evidence from Yeha, Axum and Matara places Gebeta in the Aksumite period (6th–7th centuries AD). It is mentioned in a 14th-century Ge’ez text. The game remains a living tradition across Ethiopia and Eritrea and is valued in modern education for culturally responsive mathematics.
+Archaeological evidence from Yeha, Axum and Matara places Gebeta in the Aksumite period (6th–7th centuries AD). It remains a living tradition in Ethiopia and Eritrea and is used in education for culturally responsive mathematics.
 
 ## Credits
 
-- **Traditional game**: Generations of Ethiopian and Eritrean players  
-- **Software conversion, design, implementation & digital preservation**: **Gizachew Hatau**
+- Traditional game: generations of Ethiopian and Eritrean players  
+- Software conversion, design, implementation & digital preservation: **Gizachew Hatau**
 
 ## License
 
-MIT License — free for educational and non-commercial use with attribution.
-
----
-
-ገበጣ – Ethiopia’s timeless strategy game.  
-Play, learn, and pass it on.
+MIT License

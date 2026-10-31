@@ -1,0 +1,21 @@
+{
+  "name": "gebeta",
+  "version": "1.0.0",
+  "description": "Gebeta (ገበጣ) – Traditional Ethiopian strategy game with backend history API. Software by Gizachew Hatau.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["gebeta", "gabata", "mancala", "ethiopia", "board-game"],
+  "author": "Gizachew Hatau",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "uuid": "^10.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
