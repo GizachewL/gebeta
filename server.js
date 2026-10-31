@@ -1,15 +1,16 @@
 /**
- * Gebeta (ገበጣ) – Full backend
+ * Gebeta (ገበጣ) – Backend with MongoDB
  * Accounts · Skill matchmaking · Online multiplayer · History
  * Software by Gizachew Hatau
  */
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -17,38 +18,50 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const GAMES_FILE = path.join(DATA_DIR, 'games.json');
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gebeta';
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 20 },
+  passwordHash: { type: String, required: true },
+  rating: { type: Number, default: 1000 },
+  wins: { type: Number, default: 0 },
+  losses: { type: Number, default: 0 },
+  draws: { type: Number, default: 0 },
+  gamesPlayed: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
 
-function loadJSON(file, fallback) {
-  try {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    console.warn('Load failed', file, e.message);
-  }
-  return fallback;
-}
-function saveJSON(file, data) {
-  try {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Save failed', file, e.message);
-  }
-}
+const gameSchema = new mongoose.Schema({
+  date: { type: Date, default: Date.now },
+  playerId: String,
+  mode: { type: String, default: 'local' },
+  scoreA: { type: Number, default: 0 },
+  scoreB: { type: Number, default: 0 },
+  winner: { type: String, enum: ['A', 'B', 'draw'], default: 'draw' },
+  durationSec: Number,
+  playerA: String,
+  playerB: String,
+  opponentId: String
+});
 
-let users = loadJSON(USERS_FILE, { list: [] });
-let gameHistory = loadJSON(GAMES_FILE, { games: [] });
+const User = mongoose.model('User', userSchema);
+const Game = mongoose.model('Game', gameSchema);
 
 const sessions = new Map();
 const queue = [];
 const rooms = new Map();
 
+function ratingToLevel(r) {
+  if (r < 900) return 'Beginner';
+  if (r < 1100) return 'Intermediate';
+  if (r < 1300) return 'Advanced';
+  if (r < 1500) return 'Expert';
+  return 'Master';
+}
+
 function publicUser(u) {
   return {
-    id: u.id,
+    id: String(u._id),
     username: u.username,
     rating: u.rating,
     level: ratingToLevel(u.rating),
@@ -59,31 +72,26 @@ function publicUser(u) {
   };
 }
 
-function ratingToLevel(r) {
-  if (r < 900) return 'Beginner';
-  if (r < 1100) return 'Intermediate';
-  if (r < 1300) return 'Advanced';
-  if (r < 1500) return 'Expert';
-  return 'Master';
+async function findUserByUsername(name) {
+  return User.findOne({ username: new RegExp('^' + String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') });
 }
 
-function findUserByUsername(name) {
-  return users.list.find(u => u.username.toLowerCase() === String(name).toLowerCase());
+async function findUserById(id) {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  return User.findById(id);
 }
-function findUserById(id) {
-  return users.list.find(u => u.id === id);
-}
-function authUser(req) {
+
+async function authUser(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token || !sessions.has(token)) return null;
   return findUserById(sessions.get(token));
 }
 
-function updateRatings(winnerId, loserId, draw) {
+async function updateRatings(winnerId, loserId, draw) {
   const K = 32;
-  const w = findUserById(winnerId);
-  const l = findUserById(loserId);
+  const w = await findUserById(winnerId);
+  const l = await findUserById(loserId);
   if (!w || !l) return;
   if (draw) {
     const ew = 1 / (1 + Math.pow(10, (l.rating - w.rating) / 400));
@@ -104,7 +112,8 @@ function updateRatings(winnerId, loserId, draw) {
   l.gamesPlayed = (l.gamesPlayed || 0) + 1;
   w.rating = Math.max(400, Math.min(2400, w.rating));
   l.rating = Math.max(400, Math.min(2400, l.rating));
-  saveJSON(USERS_FILE, users);
+  await w.save();
+  await l.save();
 }
 
 app.use(cors());
@@ -113,84 +122,107 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
 app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password || String(username).length < 3 || String(password).length < 4) {
-    return res.status(400).json({ error: 'Username (min 3) and password (min 4) required' });
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password || String(username).length < 3 || String(password).length < 4) {
+      return res.status(400).json({ error: 'Username (min 3) and password (min 4) required' });
+    }
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      return res.status(400).json({ error: 'Username: 3–20 letters, numbers, underscore only' });
+    }
+    if (await findUserByUsername(username)) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
+    const hash = await bcrypt.hash(String(password), 10);
+    const user = await User.create({ username: String(username), passwordHash: hash, rating: 1000 });
+    const token = uuidv4();
+    sessions.set(token, String(user._id));
+    res.status(201).json({ token, user: publicUser(user) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Registration failed' });
   }
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-    return res.status(400).json({ error: 'Username: 3–20 letters, numbers, underscore only' });
-  }
-  if (findUserByUsername(username)) {
-    return res.status(409).json({ error: 'Username already taken' });
-  }
-  const hash = await bcrypt.hash(String(password), 10);
-  const user = {
-    id: uuidv4(),
-    username: String(username),
-    passwordHash: hash,
-    rating: 1000,
-    wins: 0, losses: 0, draws: 0, gamesPlayed: 0,
-    createdAt: new Date().toISOString()
-  };
-  users.list.push(user);
-  saveJSON(USERS_FILE, users);
-  const token = uuidv4();
-  sessions.set(token, user.id);
-  res.status(201).json({ token, user: publicUser(user) });
 });
 
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body || {};
-  const user = findUserByUsername(username || '');
-  if (!user || !(await bcrypt.compare(String(password || ''), user.passwordHash))) {
-    return res.status(401).json({ error: 'Invalid username or password' });
+  try {
+    const { username, password } = req.body || {};
+    const user = await findUserByUsername(username || '');
+    if (!user || !(await bcrypt.compare(String(password || ''), user.passwordHash))) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    const token = uuidv4();
+    sessions.set(token, String(user._id));
+    res.json({ token, user: publicUser(user) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Login failed' });
   }
-  const token = uuidv4();
-  sessions.set(token, user.id);
-  res.json({ token, user: publicUser(user) });
 });
 
-app.get('/api/me', (req, res) => {
-  const user = authUser(req);
-  if (!user) return res.status(401).json({ error: 'Not logged in' });
-  res.json({ user: publicUser(user) });
+app.get('/api/me', async (req, res) => {
+  try {
+    const user = await authUser(req);
+    if (!user) return res.status(401).json({ error: 'Not logged in' });
+    res.json({ user: publicUser(user) });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
 });
 
-app.get('/api/leaderboard', (req, res) => {
-  const top = [...users.list].sort((a, b) => b.rating - a.rating).slice(0, 20).map(publicUser);
-  res.json({ leaderboard: top });
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const top = await User.find().sort({ rating: -1 }).limit(20).lean();
+    res.json({ leaderboard: top.map(u => publicUser(u)) });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load leaderboard' });
+  }
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const dbOk = mongoose.connection.readyState === 1;
   res.json({
-    status: 'ok', game: 'Gebeta', author: 'Gizachew Hatau',
-    users: users.list.length, onlineQueue: queue.length, activeRooms: rooms.size
+    status: dbOk ? 'ok' : 'degraded',
+    game: 'Gebeta',
+    author: 'Gizachew Hatau',
+    mongodb: dbOk ? 'connected' : 'disconnected',
+    users: dbOk ? await User.countDocuments() : 0,
+    onlineQueue: queue.length,
+    activeRooms: rooms.size
   });
 });
 
-app.get('/api/games', (req, res) => {
-  let list = [...gameHistory.games];
-  if (req.query.playerId) list = list.filter(g => g.playerId === req.query.playerId || g.opponentId === req.query.playerId);
-  const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
-  list = list.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, limit);
-  res.json({ games: list, total: list.length });
+app.get('/api/games', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.playerId) {
+      filter.$or = [{ playerId: req.query.playerId }, { opponentId: req.query.playerId }];
+    }
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const list = await Game.find(filter).sort({ date: -1 }).limit(limit).lean();
+    res.json({ games: list, total: list.length });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load games' });
+  }
 });
 
-app.post('/api/games', (req, res) => {
-  const body = req.body || {};
-  const entry = {
-    id: uuidv4(), date: new Date().toISOString(),
-    playerId: typeof body.playerId === 'string' ? body.playerId.slice(0, 64) : 'anonymous',
-    mode: body.mode || 'local',
-    scoreA: Number.isFinite(body.scoreA) ? body.scoreA : 0,
-    scoreB: Number.isFinite(body.scoreB) ? body.scoreB : 0,
-    winner: ['A', 'B', 'draw'].includes(body.winner) ? body.winner : 'draw',
-    durationSec: body.durationSec ?? null
-  };
-  gameHistory.games.unshift(entry);
-  if (gameHistory.games.length > 5000) gameHistory.games = gameHistory.games.slice(0, 5000);
-  saveJSON(GAMES_FILE, gameHistory);
-  res.status(201).json({ ok: true, game: entry });
+app.post('/api/games', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const entry = await Game.create({
+      playerId: typeof body.playerId === 'string' ? body.playerId.slice(0, 64) : 'anonymous',
+      mode: body.mode || 'local',
+      scoreA: Number.isFinite(body.scoreA) ? body.scoreA : 0,
+      scoreB: Number.isFinite(body.scoreB) ? body.scoreB : 0,
+      winner: ['A', 'B', 'draw'].includes(body.winner) ? body.winner : 'draw',
+      durationSec: body.durationSec ?? null,
+      playerA: body.playerA,
+      playerB: body.playerB
+    });
+    res.status(201).json({ ok: true, game: entry });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save game' });
+  }
 });
 
 app.get('*', (req, res) => {
@@ -199,11 +231,11 @@ app.get('*', (req, res) => {
   res.sendFile(fs.existsSync(pub) && fs.statSync(pub).size > 100 ? pub : root);
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (token && sessions.has(token)) {
     socket.userId = sessions.get(token);
-    socket.user = findUserById(socket.userId);
+    socket.user = await findUserById(socket.userId);
   }
   next();
 });
@@ -316,7 +348,7 @@ function applyMove(room, color, startIndex) {
     if ((room.turn === 'A' && room.passA >= 3) || (room.turn === 'B' && room.passB >= 3)) {
       endOnlineGame(room); return { ok: true, ended: true };
     }
-    const prev = room.turn; room.turn = color;
+    room.turn = color;
     if (!hasMoves(room.turn)) { endOnlineGame(room); return { ok: true, ended: true }; }
   } else {
     if (room.turn === 'A') room.passA = 0; else room.passB = 0;
@@ -324,7 +356,7 @@ function applyMove(room, color, startIndex) {
   return { ok: true };
 }
 
-function endOnlineGame(room) {
+async function endOnlineGame(room) {
   for (let i = 0; i < 6; i++) { room.storeA += room.board[i]; room.board[i] = 0; }
   for (let i = 6; i < 12; i++) { room.storeB += room.board[i]; room.board[i] = 0; }
   room.status = 'finished';
@@ -332,31 +364,31 @@ function endOnlineGame(room) {
   if (room.storeA > room.storeB) winner = 'A';
   else if (room.storeB > room.storeA) winner = 'B';
   const idA = room.players.A.userId, idB = room.players.B.userId;
-  if (winner === 'draw') updateRatings(idA, idB, true);
-  else if (winner === 'A') updateRatings(idA, idB, false);
-  else updateRatings(idB, idA, false);
+  if (winner === 'draw') await updateRatings(idA, idB, true);
+  else if (winner === 'A') await updateRatings(idA, idB, false);
+  else await updateRatings(idB, idA, false);
   io.to(room.id).emit('game_over', { winner, storeA: room.storeA, storeB: room.storeB, players: room.players });
   io.to(room.id).emit('game_state', publicRoomState(room));
-  gameHistory.games.unshift({
-    id: uuidv4(), date: new Date().toISOString(), mode: 'online',
-    scoreA: room.storeA, scoreB: room.storeB, winner,
-    playerA: room.players.A.username, playerB: room.players.B.username,
-    durationSec: Math.round((Date.now() - room.startedAt) / 1000)
-  });
-  saveJSON(GAMES_FILE, gameHistory);
+  try {
+    await Game.create({
+      mode: 'online', scoreA: room.storeA, scoreB: room.storeB, winner,
+      playerA: room.players.A.username, playerB: room.players.B.username,
+      playerId: idA, opponentId: idB,
+      durationSec: Math.round((Date.now() - room.startedAt) / 1000)
+    });
+  } catch (e) { console.error('Failed to save online game', e.message); }
   setTimeout(() => rooms.delete(room.id), 60000);
 }
 
 io.on('connection', (socket) => {
-  socket.on('find_match', () => {
+  socket.on('find_match', async () => {
     if (!socket.user) return socket.emit('error_msg', 'Please log in to play online');
     removeFromQueue(socket.userId);
     if (socket.roomId) { socket.leave(socket.roomId); socket.roomId = null; }
-    queue.push({
-      userId: socket.userId, username: socket.user.username,
-      rating: socket.user.rating || 1000, socketId: socket.id, joinedAt: Date.now()
-    });
-    socket.emit('queue_status', { inQueue: true, position: queue.length, rating: socket.user.rating });
+    const fresh = await findUserById(socket.userId);
+    const rating = fresh ? fresh.rating : 1000;
+    queue.push({ userId: socket.userId, username: socket.user.username, rating, socketId: socket.id, joinedAt: Date.now() });
+    socket.emit('queue_status', { inQueue: true, position: queue.length, rating });
     tryMatch();
   });
   socket.on('cancel_match', () => {
@@ -392,8 +424,20 @@ io.on('connection', (socket) => {
 
 setInterval(tryMatch, 5000);
 
-server.listen(PORT, () => {
-  console.log(`Gebeta server http://localhost:${PORT}`);
-  console.log('Accounts · Online matchmaking · Multiplayer · History');
-  console.log('Software by Gizachew Hatau');
-});
+async function start() {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('MongoDB connected:', MONGODB_URI.replace(/\/\/.*@/, '//***@'));
+  } catch (e) {
+    console.error('MongoDB connection failed:', e.message);
+    console.error('Set MONGODB_URI or start local mongod. Example: mongodb://127.0.0.1:27017/gebeta');
+    process.exit(1);
+  }
+  server.listen(PORT, () => {
+    console.log(`Gebeta server http://localhost:${PORT}`);
+    console.log('MongoDB · Accounts · Matchmaking · Multiplayer');
+    console.log('Software by Gizachew Hatau');
+  });
+}
+
+start();
